@@ -4,17 +4,16 @@
 
 # **Sync Anchor**
 
-**Copy selected local files to a remote server over SSH — by relative path, incrementally, and without ever deleting anything on the remote.**
+**Copy selected local files to Remote Server just on your VSCode.**
+
+*The local-edit → remote-run workflow for AI Coding Agents: Agents change files on your machine, Sync Anchor pushes the exact selection to the server where tests, training, and GPU jobs run.*
 
 <p>
 
-[![version](https://img.shields.io/badge/version-0.0.1-blue?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=donaldtrump-coder.sync-anchor)
-[![publisher](https://img.shields.io/badge/publisher-donaldtrump--coder-lightgrey?style=for-the-badge)](https://marketplace.visualstudio.com/publishers/donaldtrump-coder)
 [![license](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS_Code-%5E1.85.0-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com/)
 [![Node](https://img.shields.io/badge/Node-18%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![GitHub](https://img.shields.io/badge/GitHub-DonaldTrump--coder%2FSyncAnchor-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/DonaldTrump-coder/SyncAnchor)
 
 </p>
 
@@ -25,6 +24,8 @@
 ## Why
 
 The most tedious part of "edit locally → test on the GPU box" is pushing code. Sync Anchor pairs a **local base folder** with a **remote base folder**, then uploads only what you select, at the same relative location on the remote.
+
+This is the exact loop AI coding agents live in — **Claude Code, Codex, Cursor, or any local agent edits files on your machine, while tests, training, and GPU jobs run on the server**. Sync Anchor is the bridge: the agent (or you) changes code locally, selects the changed files, and they land on the remote at the same relative path — no `scp` guessing, no rsync footguns, no accidental remote deletions.
 
 - **Pick files or whole folders** — a folder is just a shortcut for selecting all files inside it; check a folder and its contents follow (unchecked → checked, partial → half-checked tri-state).
 - **Relative-path overwrite** — `src/model.py` from your local base lands at `<remote-base>/src/model.py`.
