@@ -74,14 +74,9 @@
         "syncAnchor.excludes": {
           "type": "array",
           "default": [
-            ".git",
-            "node_modules",
-            "venv",
-            "__pycache__",
-            ".vs",
-            "*.zip"
+            ".git"
           ],
-          "description": "Glob-like patterns excluded from the local tree and uploads."
+          "description": "Glob-like patterns excluded from the local tree and uploads. (Entries matching the local base's .gitignore are excluded too.)"
         },
         "syncAnchor.backupBeforeOverwrite": {
           "type": "boolean",

@@ -16,7 +16,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey?style=for-the-badge)](https://github.com/DonaldTrump-coder/SyncAnchor)
 [![ssh2](https://img.shields.io/badge/ssh2-SFTP-CB3837?style=for-the-badge&logo=npm&logoColor=white)](https://www.npmjs.com/package/ssh2)
-[![last commit](https://img.shields.io/github/last-commit/DonaldTrump-coder/SyncAnchor?style=for-the-badge)](https://github.com/DonaldTrump-coder/SyncAnchor/commits/main)
+[![last commit](https://img.shields.io/github/last-commit/DonaldTrump-coder/SyncAnchor?style=for-the-badge)](https://github.com/DonaldTrump-coder/SyncAnchor)
 
 </p>
 
@@ -24,30 +24,21 @@
 
 ---
 
-## Usage
+## Usage of the Extension
 
 1. Click the **Sync Anchor** icon in the Activity Bar (or run `Sync Anchor: Open Panel`).
-2. Pick a connection from the dropdown (only **live** SSH sessions are listed).
-3. Set the **local base** (a folder on this machine) and the **remote base** (a folder on the server).
-4. Check files/folders in the local tree — box-select for a batch — then click **Preview**.
+2. Pick a connection to copy files for (only **live** SSH sessions are listed).
+3. Set the **local base** (a folder on your lical machine) and the **remote base** (a folder on the server).
+4. Check files/folders in the local tree, select for a batch, and then click **Preview**.
 5. Review the transfer queue (new / overwrite / skip), then **Upload**.
 
-## Features
-
-| | |
-|---|---|
-| Full-screen panel | Four columns: local tree, remote tree, transfer queue, log |
-| Safe by design | No delete path, path-traversal guard, configurable excludes, optional backup before overwrite |
-| Incremental | Skips files identical on both sides (size + mtime) |
-| Folder selection UX | Check a folder → contents auto-check; partial selection shows a half-check; folder and contents stay consistent |
-| Streaming preview | Files appear in the queue one by one as they are diffed, not as one dump |
-| Dual-host aware | Works in local windows and Remote-SSH windows |
+![](./media/demo.png)
 
 ## Configuration
 
 | Setting | Default | Description |
 |---|---|---|
-| `syncAnchor.excludes` | `.git`, `node_modules`, `venv`, `__pycache__`, `.vs`, `*.zip` | Glob-like patterns excluded from the tree and uploads |
+| `syncAnchor.excludes` | `.git` | Glob-like patterns excluded from the tree and uploads. Entries matching the local base's `.gitignore` are excluded too — both show greyed-out with a disabled checkbox. |
 | `syncAnchor.backupBeforeOverwrite` | `false` | Move remote files to `~/.sync-anchor-backup/<timestamp>/` before overwriting |
 
 ## Requirements
