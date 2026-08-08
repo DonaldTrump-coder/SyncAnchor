@@ -41,11 +41,11 @@
 | `syncAnchor.excludes` | `[".git"]` | Glob-like patterns excluded from the tree and uploads. Entries matching the local base's `.gitignore` are excluded too. |
 | `syncAnchor.backupBeforeOverwrite` | `false` | Move remote files to `~/.sync-anchor-backup/<timestamp>/` before overwriting. |
 
-## From Source
+## Quick Start From Source
 
 **Prerequisites**
 
-- A remote host reachable over SSH, with an entry in `~/.ssh/config` (or a Remote-SSH recent connection)
+- A remote host reachable over SSH
 - Node.js 18+
 
 **Build & run**
@@ -53,7 +53,7 @@
 ```bash
 npm install
 npm run compile      # tsc → out/
-npm test             # engine + webview (jsdom) suites, 124 assertions
+npm test             
 npm run package      # build the .vsix
 ```
 
