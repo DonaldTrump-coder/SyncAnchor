@@ -16,10 +16,6 @@ The most tedious part of "edit locally → test on the GPU box" is pushing code.
 - **Preview before upload** — each file streams into the queue as it is compared against the remote, so you see exactly which files will be created / overwritten / skipped before anything is touched.
 - **`.gitignore`-aware** — your project's ignore rules grey out matching entries (badge + disabled checkbox) so build artifacts and local settings never sneak into an upload.
 
-## Demo
-
-![Sync Anchor panel](media/demo.png)
-
 ## Usage
 
 1. Click the **Sync Anchor** icon in the Activity Bar (or run `Sync Anchor: Open Panel`).

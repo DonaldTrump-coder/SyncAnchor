@@ -58,6 +58,7 @@ export class SyncAnchorPanel {
             retainContextWhenHidden: true,
             localResourceRoots: [vscode.Uri.joinPath(ctx.extensionUri, 'media')],
         });
+        panel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'media', 'icon.png');
         SyncAnchorPanel.current = new SyncAnchorPanel(panel, ctx, conn, log);
         return SyncAnchorPanel.current;
     }
