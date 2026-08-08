@@ -14,26 +14,15 @@
 [![VS Code](https://img.shields.io/badge/VS_Code-%5E1.85.0-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com/)
 [![Node](https://img.shields.io/badge/Node-18%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey?style=for-the-badge)](https://github.com/DonaldTrump-coder/SyncAnchor)
+[![ssh2](https://img.shields.io/badge/ssh2-SFTP-CB3837?style=for-the-badge&logo=npm&logoColor=white)](https://www.npmjs.com/package/ssh2)
+[![last commit](https://img.shields.io/github/last-commit/DonaldTrump-coder/SyncAnchor?style=for-the-badge)](https://github.com/DonaldTrump-coder/SyncAnchor/commits/main)
 
 </p>
 
 </div>
 
 ---
-
-## Why
-
-The most tedious part of "edit locally → test on the GPU box" is pushing code. Sync Anchor pairs a **local base folder** with a **remote base folder**, then uploads only what you select, at the same relative location on the remote.
-
-This is the exact loop AI coding agents live in — **Claude Code, Codex, Cursor, or any local agent edits files on your machine, while tests, training, and GPU jobs run on the server**. Sync Anchor is the bridge: the agent (or you) changes code locally, selects the changed files, and they land on the remote at the same relative path — no `scp` guessing, no rsync footguns, no accidental remote deletions.
-
-- **Pick files or whole folders** — a folder is just a shortcut for selecting all files inside it; check a folder and its contents follow (unchecked → checked, partial → half-checked tri-state).
-- **Relative-path overwrite** — `src/model.py` from your local base lands at `<remote-base>/src/model.py`.
-- **Never deletes anything** — the remote only ever gains or overwrites what you explicitly selected. There is no delete/mirror semantics at all.
-- **Incremental** — files whose size and mtime match the remote are skipped automatically.
-- **Zero connection setup** — the dropdown lists exactly the servers you are connected to **right now** (detected from running `ssh` processes at the OS level), auto-refreshing every 5 seconds. Open a new `ssh` connection in any terminal and it appears; close it and it disappears.
-- **Preview before upload** — each file streams into the queue as it is compared against the remote, so you see exactly which files will be created / overwritten / skipped before anything is touched.
-- **`.gitignore`-aware** — your project's ignore rules grey out matching entries (badge + disabled checkbox) so build artifacts and local settings never sneak into an upload.
 
 ## Usage
 
