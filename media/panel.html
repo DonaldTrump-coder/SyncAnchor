@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="{{CSP}}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sync Anchor</title>
+<link rel="stylesheet" href="{{MEDIA}}/panel.css">
+</head>
+<body>
+  <header class="toolbar">
+    <select id="conn-select" title="Select an existing SSH connection"></select>
+    <button id="btn-connect" class="btn" disabled>Connect</button>
+    <span id="conn-status" class="status-dot off" title="Connection status"></span>
+    <span class="sep"></span>
+    <span class="field">
+      <label>Local base</label>
+      <input id="local-base" type="text" readonly placeholder="pick folder">
+      <button id="btn-local" class="btn small">Pick</button>
+    </span>
+    <span class="sep"></span>
+    <span class="field grow">
+      <label>Remote base</label>
+      <input id="remote-base" type="text" placeholder="pick via ▾ or type">
+      <button id="btn-remote" class="btn small">Set</button>
+      <button id="btn-remote-picker" class="btn small" title="Browse remote directories to pick the base">▾</button>
+    </span>
+    <span class="sep"></span>
+    <label class="check" title="Backup remote files to .sync-anchor-backup before overwriting">
+      <input type="checkbox" id="chk-backup"> backup
+    </label>
+    <button id="btn-preview" class="btn primary" disabled>Preview</button>
+    <button id="btn-upload" class="btn primary" disabled>Upload</button>
+    <button id="btn-refresh" class="btn small" title="Refresh">⟳</button>
+  </header>
+
+  <main class="grid">
+    <section class="col">
+      <h3>Local <span class="hint">check files to select</span></h3>
+      <div class="tree" id="local-tree"><div class="placeholder">Pick a local base folder to browse.</div></div>
+    </section>
+    <section class="col">
+      <h3>Remote <span class="hint">reference</span></h3>
+      <div class="tree" id="remote-tree"><div class="placeholder">Connect to browse the remote filesystem.</div></div>
+    </section>
+    <section class="col">
+      <h3>Queue <span class="hint" id="queue-count"></span></h3>
+      <div class="tree" id="queue-list"><div class="placeholder">Select files, then press Preview.</div></div>
+    </section>
+    <section class="col">
+      <h3 class="log-head">Log <button id="btn-log-clear" class="btn small" title="Clear log">Clear</button></h3>
+      <div class="log" id="log"></div>
+    </section>
+  </main>
+
+  <footer class="progress" id="progress" hidden>
+    <div class="bar" id="progress-bar"></div>
+    <span id="progress-text"></span>
+  </footer>
+
+  <!-- Remote base path picker (breadcrumb dropdown) -->
+  <div id="remote-picker" class="picker" hidden>
+    <div class="picker-crumbs" id="picker-crumbs"></div>
+    <div class="picker-dirs" id="picker-dirs"><div class="placeholder">Loading…</div></div>
+    <div class="picker-footer">
+      <span class="picker-path" id="picker-path"></span>
+      <button id="picker-ok" class="btn primary small">Select this dir</button>
+    </div>
+  </div>
+
+  <script src="{{MEDIA}}/panel.js"></script>
+</body>
+</html>

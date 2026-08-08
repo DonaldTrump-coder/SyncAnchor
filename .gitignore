@@ -1,0 +1,7 @@
+node_modules/
+out/
+*.vsix
+*.log
+npm-debug.log*
+*.tsbuildinfo
+.DS_Store

@@ -1,0 +1,111 @@
+{
+  "name": "sync-anchor",
+  "displayName": "Sync Anchor",
+  "description": "Local-to-remote SSH copy sync: pick files/folders locally, overwrite the remote by relative path under a paired base folder, never deletes anything.",
+  "version": "0.0.1",
+  "publisher": "donaldtrump-coder",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DonaldTrump-coder/SyncAnchor"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "ssh",
+    "sftp",
+    "sync",
+    "deploy",
+    "remote",
+    "upload"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onView:syncAnchor.status",
+    "onCommand:syncAnchor.openPanel",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "syncAnchor",
+          "title": "Sync Anchor",
+          "icon": "cloud-upload"
+        }
+      ]
+    },
+    "views": {
+      "syncAnchor": [
+        {
+          "id": "syncAnchor.status",
+          "name": "Sync Anchor",
+          "icon": "cloud-upload"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "syncAnchor.openPanel",
+        "title": "Sync Anchor: Open Panel",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "syncAnchor.setLocalBase",
+        "title": "Sync Anchor: Set Local Base"
+      },
+      {
+        "command": "syncAnchor.setRemoteBase",
+        "title": "Sync Anchor: Set Remote Base"
+      },
+      {
+        "command": "syncAnchor.pickConnection",
+        "title": "Sync Anchor: Select Connection"
+      }
+    ],
+    "configuration": {
+      "title": "Sync Anchor",
+      "properties": {
+        "syncAnchor.excludes": {
+          "type": "array",
+          "default": [
+            ".git",
+            "node_modules",
+            "venv",
+            "__pycache__",
+            ".vs",
+            "*.zip"
+          ],
+          "description": "Glob-like patterns excluded from the local tree and uploads."
+        },
+        "syncAnchor.backupBeforeOverwrite": {
+          "type": "boolean",
+          "default": false,
+          "description": "Move remote files to ~/.sync-anchor-backup/<timestamp>/ before overwriting them."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "node test/smoke-test.cjs && node test/webview-test.cjs",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "ssh2": "^1.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/ssh2": "^1.15.0",
+    "@types/vscode": "^1.85.0",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.5.0"
+  }
+}
