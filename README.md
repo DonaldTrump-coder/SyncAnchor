@@ -1,8 +1,26 @@
-# Sync Anchor
+<div align="center">
 
-Copy selected local files/folders to a remote server over SSH by **relative path** — safely, incrementally, and without ever deleting anything on the remote.
+<img src="media/icon.png" width="96" alt="Sync Anchor logo">
 
-![icon](media/icon.png)
+# **Sync Anchor**
+
+**Copy selected local files to a remote server over SSH — by relative path, incrementally, and without ever deleting anything on the remote.**
+
+<p>
+
+[![version](https://img.shields.io/badge/version-0.0.1-blue?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=donaldtrump-coder.sync-anchor)
+[![publisher](https://img.shields.io/badge/publisher-donaldtrump--coder-lightgrey?style=for-the-badge)](https://marketplace.visualstudio.com/publishers/donaldtrump-coder)
+[![license](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
+[![VS Code](https://img.shields.io/badge/VS_Code-%5E1.85.0-007ACC?style=for-the-badge&logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com/)
+[![Node](https://img.shields.io/badge/Node-18%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![GitHub](https://img.shields.io/badge/GitHub-DonaldTrump--coder%2FSyncAnchor-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/DonaldTrump-coder/SyncAnchor)
+
+</p>
+
+</div>
+
+---
 
 ## Why
 
@@ -52,7 +70,7 @@ The most tedious part of "edit locally → test on the GPU box" is pushing code.
 ```bash
 npm install
 npm run compile      # tsc → out/
-npm test             # 124 assertions across engine + webview (jsdom)
+npm test             # engine + webview (jsdom) suites, 124 assertions
 npm run package      # build the .vsix
 ```
 
