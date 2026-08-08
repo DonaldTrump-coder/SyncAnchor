@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- New 512×512 extension icon (was a tiny placeholder)
+- New extension icon
 
 ## [0.0.1] - 2026-08-08
 
