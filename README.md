@@ -4,7 +4,7 @@
 
 # **Sync Anchor**
 
-**Copy selected local files to Remote Server just on your VSCode.**
+**Copy selected local files to Remote Server just on your VS Code.**
 
 *The local-edit → remote-run workflow for AI Coding Agents: Agents change files on your machine, Sync Anchor pushes the exact selection to the server where tests, training, and GPU jobs run.*
 
@@ -65,4 +65,4 @@ See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-MIT
+[MIT](./LICENSE)
