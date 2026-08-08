@@ -34,19 +34,21 @@
 
 ![](./media/demo.png)
 
-## Configuration
+## Configurations
 
 | Setting | Default | Description |
 |---|---|---|
-| `syncAnchor.excludes` | `.git` | Glob-like patterns excluded from the tree and uploads. Entries matching the local base's `.gitignore` are excluded too — both show greyed-out with a disabled checkbox. |
-| `syncAnchor.backupBeforeOverwrite` | `false` | Move remote files to `~/.sync-anchor-backup/<timestamp>/` before overwriting |
+| `syncAnchor.excludes` | `[".git"]` | Glob-like patterns excluded from the tree and uploads. Entries matching the local base's `.gitignore` are excluded too. |
+| `syncAnchor.backupBeforeOverwrite` | `false` | Move remote files to `~/.sync-anchor-backup/<timestamp>/` before overwriting. |
 
-## Requirements
+## From Source
+
+**Prerequisites**
 
 - A remote host reachable over SSH, with an entry in `~/.ssh/config` (or a Remote-SSH recent connection)
-- Node.js 18+ (only needed for development / publishing)
+- Node.js 18+
 
-## Development
+**Build & run**
 
 ```bash
 npm install
@@ -56,25 +58,6 @@ npm run package      # build the .vsix
 ```
 
 Run the extension with **F5** inside VS Code (launch.json is included).
-
-## Publishing to the VS Code Marketplace
-
-1. Create a publisher on [Visual Studio Marketplace](https://marketplace.visualstudio.com/manage): sign in with a Microsoft account, create a publisher named `donaldtrump-coder`, then create a Personal Access Token with the **Marketplace → Manage** scope.
-2. Push this repository to GitHub (`DonaldTrump-coder/SyncAnchor`) and tag it:
-   ```bash
-   git tag v0.0.1 && git push --tags
-   ```
-3. Authenticate `vsce` once:
-   ```bash
-   npm install -g @vscode/vsce
-   vsce login donaldtrump-coder
-   ```
-4. Publish:
-   ```bash
-   npm run package     # sanity-check the .vsix
-   vsce publish        # builds and uploads
-   ```
-5. Update later versions with `vsce publish patch` / `minor` / `major` (bumps `package.json`, commits, tags, and uploads in one step).
 
 ## Release Notes
 
