@@ -23,8 +23,12 @@ const OPT_WITH_VALUE = new Set([
 export function listSshProcesses(): string[] {
     try {
         if (process.platform === 'win32') {
+            // Force PowerShell to emit UTF-8: its default console output
+            // encoding (GBK on Chinese Windows) makes non-ASCII command lines
+            // decode as mojibake here — e.g. a Chinese Host alias becomes
+            // "��������T4" and never matches the ssh config entry.
             const out = cp.execSync(
-                'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name=\'ssh.exe\'\\" | Select-Object -ExpandProperty CommandLine"',
+                'powershell -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Filter \\\"Name=\'ssh.exe\'\\\" | Select-Object -ExpandProperty CommandLine"',
                 { encoding: 'utf8', timeout: 10000 },
             );
             return out

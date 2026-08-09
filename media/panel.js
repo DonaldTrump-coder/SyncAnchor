@@ -415,6 +415,16 @@
       }
     }
     for (const d of dirs) {
+      // Track subfolders in the selection too, not just files: the tree
+      // re-applies state.selected to freshly rendered nodes on expand, so a
+      // subfolder skipped here (its node not yet in the DOM) would come back
+      // UNCHECKED while its files show checked — "folder check selects the
+      // files but not the folders inside".
+      if (checked) {
+        state.selected.add(d);
+      } else {
+        state.selected.delete(d);
+      }
       const box = findBox(d);
       if (box && !box.disabled) {
         box.checked = checked;

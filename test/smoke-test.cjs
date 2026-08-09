@@ -99,6 +99,10 @@ const p2 = liveSsh.parseSshCommandLine('ssh -p 42420 -l featurize workspace.feat
 ok(p2 && p2.host === 'workspace.featurize.cn' && p2.port === 42420 && p2.user === 'featurize', 'parses -p and -l options');
 const p3 = liveSsh.parseSshCommandLine('ssh user@host.example.com');
 ok(p3 && p3.host === 'host.example.com' && p3.user === 'user', 'parses user@host form');
+// Chinese Host aliases (e.g. `Host 算力自由T4` in ~/.ssh/config) must survive
+// the command-line parser byte-for-byte — mojibake here never matches config.
+const p4 = liveSsh.parseSshCommandLine('ssh "算力自由T4"');
+ok(p4 && p4.host === '算力自由T4', 'parses non-ASCII (Chinese) host alias verbatim');
 const targets = liveSsh.scanLiveSsh();
 console.log('  live targets:', JSON.stringify(targets));
 if (process.platform === 'win32') {
@@ -108,7 +112,15 @@ if (process.platform === 'win32') {
     // failing on ambient machine state.
     console.log('  (no live ssh process right now — skipping hit assertion)');
   } else {
-    ok(targets.some((t) => t.host === '183.147.142.40'), 'scanLiveSsh finds the running ssh connection');
+    // Ambient-state assertion, guarded to not depend on WHICH server the
+    // user happens to be connected to: the scan output must never contain
+    // mojibake hosts (U+FFFD replacement chars) — the PowerShell GBK→UTF-8
+    // decoding bug that made Chinese aliases unconnectable.
+    const mojibake = targets.filter((t) => t.host.includes('\uFFFD'));
+    ok(
+      mojibake.length === 0,
+      'no mojibake (U+FFFD) host in live scan — PowerShell UTF-8 output fix',
+    );
   }
 } else {
   console.log('  (non-Windows: scan is best-effort)');

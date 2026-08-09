@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.3] - 2026-08-09
+
+### Fixed
+
+- Live connection scanning on Windows now forces PowerShell to emit UTF-8, so non-ASCII SSH config aliases (e.g. `Host 算力自由T4`) are decoded correctly instead of surfacing as mojibake (`��������T4`) that never matches the config entry and fails to connect with `getaddrinfo EINVAL`
+- Checking a folder now selects the subfolders inside it as well as the files: previously only the files were tracked, so a folder checked while still collapsed came back with its subfolders unchecked — and the parent showing a half-check — the moment it was expanded
+
 ## [0.0.2] - 2026-08-08
 
 ### Changed

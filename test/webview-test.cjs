@@ -305,6 +305,37 @@ ok(
   'folder uncheck drops its files (preview blocked, nothing selected)',
 );
 
+// 3) Regression: checking a folder whose subtree is NOT yet rendered must
+//    still select the subfolders inside it. Subfolder paths arrive in the
+//    filesCollected `dirs` array; when the folder is expanded later,
+//    renderLocalDir re-applies state.selected — subfolders absent from it
+//    would come back UNCHECKED while their files show checked.
+srcChkBox.checked = true;
+srcChkBox.dispatchEvent(new window.Event('change'));
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py', 'D:/proj/src/sub/b.py'], dirs: ['D:/proj/src/sub'] },
+}));
+const srcTwisty2 = srcNode2.querySelector(':scope > .row .twisty');
+srcTwisty2.click(); // expand (posts readDir)
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'dir', dirPath: 'D:/proj/src', entries: [
+    { name: 'sub', path: 'D:/proj/src/sub', isDir: true, excluded: false },
+    { name: 'a.py', path: 'D:/proj/src/a.py', isDir: false, excluded: false },
+  ] },
+}));
+const subChk = localTreeEl.querySelector('.node[data-path="D:/proj/src/sub"] input.chk');
+const aChkAfter = localTreeEl.querySelector('.node[data-path="D:/proj/src/a.py"] input.chk');
+ok(!!subChk && !!aChkAfter, 'expanded folder renders subfolder and file');
+ok(subChk.checked === true && aChkAfter.checked === true, 'subfolder inside checked folder is checked after expand');
+ok(srcChkBox.checked === true && srcChkBox.indeterminate === false, 'parent stays fully checked, not half-check');
+// restore: uncheck src so the tri-state tests below start clean.
+srcChkBox.checked = false;
+srcChkBox.dispatchEvent(new window.Event('change'));
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py', 'D:/proj/src/sub/b.py'], dirs: ['D:/proj/src/sub'] },
+}));
+ok(subChk.checked === false && aChkAfter.checked === false, 'unchecking folder clears subfolders too');
+
 // 2) tri-state: partial → indeterminate, all → checked, none → unchecked.
 window.dispatchEvent(new window.MessageEvent('message', {
   data: { type: 'dir', dirPath: 'D:/proj/src', entries: [
