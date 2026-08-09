@@ -820,11 +820,13 @@
   let dragBox = null;
   let suppressNextClick = false;
 
-  // Listen on document so the drag can start from any blank area of the tree,
-  // INCLUDING the strip to its LEFT (the first column starts at the viewport's
-  // left edge and users often grab there). Use coordinates, not containment,
-  // so the left gutter and the tree's own padding both start a box-select.
-  document.addEventListener('mousedown', (e) => {
+  // Pointer events + setPointerCapture: while the button is held, the browser
+  // keeps delivering pointermove/pointerup to THIS document even when the
+  // pointer leaves the webview — a tall tree drag that reaches the bottom edge
+  // of the panel and is released over the status bar (or outside the window)
+  // still completes. With plain mouseup on window that release is never seen:
+  // the selection rect stays on screen and nothing gets selected.
+  document.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) {
       return;
     }
@@ -835,12 +837,17 @@
     if (e.clientX < 0 || e.clientX > tr.right || e.clientY < tr.top || e.clientY > tr.bottom) {
       return; // outside the local-tree column
     }
-    dragBox = { x0: e.clientX, y0: e.clientY, el: null };
+    dragBox = { x0: e.clientX, y0: e.clientY, el: null, pointerId: e.pointerId };
+    try {
+      document.body.setPointerCapture(e.pointerId);
+    } catch {
+      // Capture unavailable (old engine): fall back to plain in-viewport drags.
+    }
     e.preventDefault(); // avoid text selection while dragging
   });
 
-  window.addEventListener('mousemove', (e) => {
-    if (!dragBox) {
+  window.addEventListener('pointermove', (e) => {
+    if (!dragBox || e.pointerId !== dragBox.pointerId) {
       return;
     }
     const dx = e.clientX - dragBox.x0;
@@ -852,9 +859,9 @@
       dragBox.el.className = 'sel-rect';
       document.body.appendChild(dragBox.el);
       suppressNextClick = true;
-      // NOTE: existing selection is kept during the drag; on mouseup the boxed
-      // nodes are TOGGLED (checked → unchecked, unchecked → checked), leaving
-      // everything outside the box untouched.
+      // NOTE: existing selection is kept during the drag; on pointerup the
+      // boxed nodes are TOGGLED (checked → unchecked, unchecked → checked),
+      // leaving everything outside the box untouched.
     }
     if (dragBox.el) {
       // Clamp to the viewport so the box stays visible when the pointer
@@ -868,8 +875,8 @@
     }
   });
 
-  window.addEventListener('mouseup', (e) => {
-    if (!dragBox) {
+  window.addEventListener('pointerup', (e) => {
+    if (!dragBox || e.pointerId !== dragBox.pointerId) {
       return;
     }
     if (dragBox.el) {
@@ -904,7 +911,29 @@
       }
       dragBox.el.remove();
     }
+    try {
+      if (document.body.hasPointerCapture(e.pointerId)) {
+        document.body.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Capture already gone — nothing to release.
+    }
     dragBox = null;
+  });
+
+  // If the browser cancels the pointer mid-drag (system gesture steals it,
+  // pointer lost), no pointerup will follow — clean up so the selection rect
+  // can never stick on screen. A cancelled drag also produces no click, so
+  // release the click-suppression guard or the NEXT real click is swallowed.
+  document.addEventListener('pointercancel', (e) => {
+    if (!dragBox || e.pointerId !== dragBox.pointerId) {
+      return;
+    }
+    if (dragBox.el) {
+      dragBox.el.remove();
+    }
+    dragBox = null;
+    suppressNextClick = false;
   });
 
   // A drag ends with a click event on the tree; swallow that one click so the

@@ -40,6 +40,14 @@ const sent = [];
 window.acquireVsCodeApi = () => ({ postMessage: (m) => sent.push(m) });
 const errors = [];
 window.addEventListener('error', (e) => errors.push(String(e.message)));
+// jsdom lacks the pointer-capture API. The webview's drag-box captures the
+// pointer so pointerup still arrives when the pointer leaves the webview; stub
+// capture (statefully) so the code runs and the capture-request can be
+// asserted below.
+const captured = new Set();
+window.Element.prototype.setPointerCapture = function (id) { captured.add(id); };
+window.Element.prototype.hasPointerCapture = function (id) { return captured.has(id); };
+window.Element.prototype.releasePointerCapture = function (id) { captured.delete(id); };
 window.eval(script);
 
 ok(sent.some((m) => m.type === 'ready'), 'panel posts ready on init');
@@ -227,10 +235,10 @@ localNodes.forEach((n, i) => {
   n.getBoundingClientRect = () => nodeRects[Math.min(i, nodeRects.length - 1)];
 });
 const fire = (target, type, x, y) =>
-  target.dispatchEvent(new window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }));
-fire(localTreeEl, 'mousedown', 5, 5);
-fire(window, 'mousemove', 150, 55);
-fire(window, 'mouseup', 150, 55);
+  target.dispatchEvent(new window.PointerEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y, pointerId: 1 }));
+fire(localTreeEl, 'pointerdown', 5, 5);
+fire(window, 'pointermove', 150, 55);
+fire(window, 'pointerup', 150, 55);
 const checkedCount = localTreeEl.querySelectorAll('input.chk:checked').length;
 ok(checkedCount === 2, 'drag-box selects intersecting nodes (' + checkedCount + ' of 3, excluded skipped)');
 
@@ -244,9 +252,9 @@ const pkChk = allChks[2]; // package.json
 pkChk.checked = true;
 pkChk.dispatchEvent(new window.Event('change'));
 ok(localTreeEl.querySelectorAll('input.chk:checked').length === 1, 'one node pre-selected before box-select');
-fire(localTreeEl, 'mousedown', 5, 25);
-fire(window, 'mousemove', 150, 35); // covers only src (rect {0,20,200,40})
-fire(window, 'mouseup', 150, 35);
+fire(localTreeEl, 'pointerdown', 5, 25);
+fire(window, 'pointermove', 150, 35); // covers only src (rect {0,20,200,40})
+fire(window, 'pointerup', 150, 35);
 const afterChk = localTreeEl.querySelectorAll('input.chk:checked');
 ok(
   afterChk.length === 2 && afterChk[0] === allChks[0] && afterChk[1] === allChks[2],
@@ -255,20 +263,68 @@ ok(
 
 // Box-select the same region again — boxed nodes toggle BACK off, outside
 // selection (package.json) still untouched.
-fire(localTreeEl, 'mousedown', 5, 25);
-fire(window, 'mousemove', 150, 35);
-fire(window, 'mouseup', 150, 35);
+fire(localTreeEl, 'pointerdown', 5, 25);
+fire(window, 'pointermove', 150, 35);
+fire(window, 'pointerup', 150, 35);
 const afterChk2 = localTreeEl.querySelectorAll('input.chk:checked');
 ok(afterChk2.length === 1 && afterChk2[0] === allChks[2], 'second box-select toggles src back off');
 
 // Dragging from the blank strip LEFT of the tree (tree starts at x=20) still
 // starts a box-select — coordinate-based start check, not element containment.
 localTreeEl.getBoundingClientRect = () => ({ left: 20, top: 0, right: 220, bottom: 200 });
-fire(window.document.body, 'mousedown', 5, 25); // x=5 is left of the tree
-fire(window, 'mousemove', 150, 55);
-fire(window, 'mouseup', 150, 55);
+fire(window.document.body, 'pointerdown', 5, 25); // x=5 is left of the tree
+fire(window, 'pointermove', 150, 55);
+fire(window, 'pointerup', 150, 55);
 const leftChk = localTreeEl.querySelectorAll('input.chk:checked');
 ok(leftChk.length >= 1, 'drag from the left gutter starts box-select (' + leftChk.length + ' checked)');
+
+// Regression (real bug): a TALL tree — drag the box all the way past the
+// bottom of the tree (and the webview). The pointer is captured on pointerdown,
+// so a release past the panel edge must still toggle the boxed rows and the
+// selection rect must NOT stick on screen. Rows: root (no checkbox), src,
+// node_modules (excluded, disabled), package.json. Entering this block src is
+// checked, package.json is not.
+localTreeEl.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200 });
+const tallNodes = [...localTreeEl.querySelectorAll('.node')];
+const tallSrc = tallNodes[1].querySelector(':scope > .row input.chk');
+const tallPkg = tallNodes[3].querySelector(':scope > .row input.chk');
+fire(localTreeEl, 'pointerdown', 5, 5);
+ok(window.document.body.hasPointerCapture(1), 'pointerdown requests pointer capture (release outside the webview still lands)');
+fire(window, 'pointermove', 150, 500); // far below the tree bottom / panel edge
+ok(!!window.document.querySelector('.sel-rect'), 'selection rect visible while dragging past the bottom edge');
+fire(window, 'pointerup', 150, 500);
+ok(
+  tallSrc.checked === false && tallPkg.checked === true,
+  'release past the tree bottom still toggles every boxed row',
+);
+ok(!window.document.querySelector('.sel-rect'), 'selection rect removed after release outside the tree');
+ok(!window.document.body.hasPointerCapture(1), 'pointer capture released on pointerup');
+// Consume the click-suppression guard like a real browser would.
+window.document.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+// A second box over the same region toggles back (net zero) — the fix must
+// keep working for repeated drags, not just the first one.
+fire(localTreeEl, 'pointerdown', 5, 5);
+fire(window, 'pointermove', 150, 500);
+fire(window, 'pointerup', 150, 500);
+ok(tallSrc.checked === true && tallPkg.checked === false, 'second tall drag toggles back (net zero)');
+window.document.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+
+// pointercancel mid-drag (browser steals the pointer): the rect must not
+// stick, nothing toggles, and the NEXT drag starts clean. The cancel targets
+// the captured element (document.body) exactly as in a real browser.
+fire(localTreeEl, 'pointerdown', 5, 5);
+fire(window, 'pointermove', 150, 35);
+ok(!!window.document.querySelector('.sel-rect'), 'drag in progress shows selection rect');
+fire(window.document.body, 'pointercancel', 150, 35);
+ok(!window.document.querySelector('.sel-rect'), 'pointercancel removes the selection rect');
+ok(tallSrc.checked === true, 'pointercancel toggles nothing');
+fire(localTreeEl, 'pointerdown', 5, 25);
+fire(window, 'pointermove', 150, 35);
+fire(window, 'pointerup', 150, 35);
+ok(tallSrc.checked === false, 'box-select works again after pointercancel (toggled src off)');
+ok(!window.document.querySelector('.sel-rect'), 'selection rect removed on the post-cancel drag');
+// Consume the click-suppression guard from the last drag.
+window.document.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
 
 // A real browser fires a click after mouseup; jsdom does not. Emit it so the
 // click-suppression guard is consumed exactly like in production.
@@ -363,9 +419,9 @@ ok(srcChkBox.checked === false && srcChkBox.indeterminate === false, 'none selec
 // becomes checked (not a stale half-check).
 srcChkBox.indeterminate = true;
 srcChkBox.checked = false;
-fire(localTreeEl, 'mousedown', 5, 25);
-fire(window, 'mousemove', 150, 35); // covers src
-fire(window, 'mouseup', 150, 35);
+fire(localTreeEl, 'pointerdown', 5, 25);
+fire(window, 'pointermove', 150, 35); // covers src
+fire(window, 'pointerup', 150, 35);
 ok(srcChkBox.checked === true && srcChkBox.indeterminate === false, 'box-select clears folder tri-state');
 
 // Regression: box-selecting a FOLDER together with a file must not let the
@@ -382,9 +438,9 @@ aBox.dispatchEvent(new window.Event('change'));
 bBox.checked = false;
 bBox.dispatchEvent(new window.Event('change'));
 // src row {0,20,200,40} and package.json row {0,40,200,60} are inside the box.
-fire(localTreeEl, 'mousedown', 5, 25);
-fire(window, 'mousemove', 150, 55);
-fire(window, 'mouseup', 150, 55);
+fire(localTreeEl, 'pointerdown', 5, 25);
+fire(window, 'pointermove', 150, 55);
+fire(window, 'pointerup', 150, 55);
 ok(
   srcChkBox.checked === true,
   'box-select keeps folder checked while files toggle (pending guard)',

@@ -2,7 +2,7 @@
   "name": "sync-anchor",
   "displayName": "Sync Anchor",
   "description": "Local-to-remote SSH copy sync: pick files/folders locally, overwrite the remote by relative path under a paired base folder, never deletes anything.",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "donaldtrump-coder",
   "license": "MIT",
   "icon": "media/icon.png",
