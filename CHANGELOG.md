@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.6] - 2026-08-11
+
+### Fixed
+
+- Unchecking a folder now actually drops its files from the upload. Previously an unrelated checkbox change could re-derive the folder as checked while its contents were still being collected, so the late response silently re-added the whole subtree to the selection — Preview uploaded files the user had just unselected
+
+### Added
+
+- Per-file transfer progress: while a file uploads, its queue row now shows a live progress bar (bytes done vs. total size) and the transfer speed (e.g. `2.5 MB/s`), in addition to the overall file-count progress bar
+
+### Changed
+
+- Large-file uploads are up to ~3x faster on high-latency links: the SFTP write pipeline is now 128KB × 128 (16MB in flight) instead of ssh2's default 32KB × 64 (2MB), which was the bandwidth-delay-product ceiling on WAN connections (measured ~8 MB/s at 200ms RTT → ~28 MB/s). Tune via `syncAnchor.transferChunkSizeKB` and `syncAnchor.transferConcurrency` (e.g. 256 concurrency for 200ms+ RTT links)
+
 ## [0.0.4] - 2026-08-09
 
 ### Fixed

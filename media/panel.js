@@ -32,6 +32,7 @@
 
   const localChildren = new Map(); // dirPath -> children container element
   const remoteChildren = new Map(); // dirPath -> children container element
+  const fileEls = new Map(); // relPath -> { root, fill, speed, lastBytes, lastTime, speedEwma, shown }
 
   const $ = (id) => document.getElementById(id);
   const connSelect = $('conn-select');
@@ -115,6 +116,9 @@
         break;
       case 'progress':
         renderProgress(m);
+        break;
+      case 'fileProgress':
+        renderFileProgress(m);
         break;
       case 'log':
         appendLog(m.line);
@@ -339,10 +343,14 @@
       });
       chk.addEventListener('change', () => {
         // Folder: ask the extension for its full subtree, then check/uncheck
-        // every file so folder and contents stay consistent. While the
-        // response is pending, updateDirStates must NOT re-derive this box
-        // from its (still unchanged) children — that would undo the toggle.
-        div.dataset.pending = chk.checked ? '1' : '';
+        // every file so folder and contents stay consistent. The pending guard
+        // is set for BOTH directions and stays until the collectFiles response
+        // arrives: on uncheck the children are still checked (their boxes only
+        // change when the response lands), so without the guard an unrelated
+        // updateDirStates() would re-derive this folder back to checked and
+        // applyDirSelection would then re-add the whole subtree — "unchecking
+        // a folder doesn't drop its files from the upload".
+        div.dataset.pending = '1';
         post({ type: 'collectFiles', dirPath: entry.path });
       });
     } else {
@@ -454,7 +462,7 @@
         continue;
       }
       if (d.dataset.pending === '1') {
-        continue; // folder check awaiting collectFiles response
+        continue; // folder toggle awaiting collectFiles response (check OR uncheck)
       }
       const childBoxes = [...d.querySelectorAll(':scope > .children > .node > .row input.chk')].filter(
         (b) => !b.disabled,
@@ -662,9 +670,31 @@
     const badgeSpec = BADGES[it.status] || ['?', ''];
     const div = el('div', 'qitem');
     const badge = el('span', 'badge ' + badgeSpec[1], badgeSpec[0]);
+    const body = el('div', 'qbody');
     const text = el('span', 'qpath', it.relPath + (it.error ? ' — ' + it.error : ''));
+    // Per-file transfer row: a slim progress bar + live speed, hidden until
+    // the file's fileProgress messages arrive during upload.
+    const meta = el('div', 'qmeta');
+    meta.hidden = true; // revealed by the first fileProgress message
+    const bar = el('div', 'qbar');
+    const fill = el('div', 'qbar-fill');
+    bar.appendChild(fill);
+    const speed = el('span', 'qspeed');
+    meta.appendChild(bar);
+    meta.appendChild(speed);
+    body.appendChild(text);
+    body.appendChild(meta);
     div.appendChild(badge);
-    div.appendChild(text);
+    div.appendChild(body);
+    fileEls.set(it.relPath, {
+      root: meta,
+      fill,
+      speed,
+      lastBytes: 0,
+      lastTime: 0,
+      speedEwma: 0,
+      shown: false,
+    });
     return div;
   }
 
@@ -675,6 +705,7 @@
 
   function renderQueue(items, mode) {
     state.queue = items;
+    fileEls.clear(); // rows are rebuilt — drop stale per-file progress state
     queueList.innerHTML = '';
     queueCount.textContent = queueCountText(items, mode);
     for (const it of items) {
@@ -697,6 +728,44 @@
         progress.hidden = true;
       }, 1500);
     }
+  }
+
+  /**
+   * Live per-file progress: update the file's row bar and show the transfer
+   * speed (bytes per second, EWMA-smoothed so the number does not jitter).
+   */
+  function renderFileProgress(m) {
+    const meta = fileEls.get(m.relPath);
+    if (!meta) {
+      return; // row gone (queue cleared / refreshed mid-upload)
+    }
+    const pct = m.bytesTotal > 0 ? Math.min(100, (m.bytesDone / m.bytesTotal) * 100) : 0;
+    meta.fill.style.width = pct + '%';
+    if (!meta.shown && pct > 0) {
+      meta.shown = true;
+      meta.root.hidden = false; // reveal the bar + speed row
+    }
+    const now = Date.now();
+    if (meta.lastTime && now > meta.lastTime) {
+      const inst = ((m.bytesDone - meta.lastBytes) * 1000) / (now - meta.lastTime);
+      meta.speedEwma = meta.speedEwma ? meta.speedEwma * 0.7 + inst * 0.3 : inst;
+    }
+    meta.lastBytes = m.bytesDone;
+    meta.lastTime = now;
+    meta.speed.textContent = meta.speedEwma > 0 ? formatSpeed(meta.speedEwma) + '/s' : '';
+  }
+
+  function formatSpeed(bytesPerSec) {
+    if (bytesPerSec >= 1024 * 1024 * 1024) {
+      return (bytesPerSec / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+    }
+    if (bytesPerSec >= 1024 * 1024) {
+      return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+    if (bytesPerSec >= 1024) {
+      return (bytesPerSec / 1024).toFixed(0) + ' KB';
+    }
+    return Math.round(bytesPerSec) + ' B';
   }
 
   function appendLog(line) {

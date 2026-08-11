@@ -2,7 +2,7 @@
   "name": "sync-anchor",
   "displayName": "Sync Anchor",
   "description": "Local-to-remote SSH copy sync: pick files/folders locally, overwrite the remote by relative path under a paired base folder, never deletes anything.",
-  "version": "0.0.4",
+  "version": "0.0.6",
   "publisher": "donaldtrump-coder",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -82,6 +82,18 @@
           "type": "boolean",
           "default": false,
           "description": "Move remote files to ~/.sync-anchor-backup/<timestamp>/ before overwriting them."
+        },
+        "syncAnchor.transferChunkSizeKB": {
+          "type": "number",
+          "default": 128,
+          "minimum": 16,
+          "description": "SFTP write chunk size in KB per request. Larger chunks reduce per-request overhead; 128KB is the sweet spot on high-latency links."
+        },
+        "syncAnchor.transferConcurrency": {
+          "type": "number",
+          "default": 128,
+          "minimum": 1,
+          "description": "Concurrent in-flight SFTP writes (pipeline depth). In-flight bytes = chunkSize × concurrency; raise to 256 for very high-latency links (e.g. 200ms+ RTT)."
         }
       }
     }

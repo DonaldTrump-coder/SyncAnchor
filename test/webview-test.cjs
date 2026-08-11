@@ -532,5 +532,93 @@ window.dispatchEvent(new window.MessageEvent('message', {
 }));
 ok(window.document.querySelectorAll('#queue-list .qitem').length === 1, 'streaming resumes after new preview');
 
+// ---- Regression (real bug): unchecking a folder must STICK even when an
+// unrelated interaction re-runs updateDirStates BEFORE the collectFiles
+// response lands. Previously the pending guard was only set while checking —
+// on uncheck, updateDirStates re-derived the folder as checked from its
+// still-checked children, and the late applyDirSelection then re-added the
+// whole subtree to the upload ("can't unselect a folder").
+const srcNode3 = [...localTreeEl.querySelectorAll('.node')].find(
+  (n) => n.querySelector('.name')?.textContent === 'src',
+);
+const srcBox3 = srcNode3.querySelector(':scope > .row input.chk');
+const pkgBox3 = localTreeEl.querySelector('.node[data-path="D:/proj/package.json"] input.chk');
+const aBox3 = localTreeEl.querySelector('.node[data-path="D:/proj/src/a.py"] input.chk');
+// 1) ensure src is fully checked with its files selected
+srcBox3.checked = true;
+srcBox3.dispatchEvent(new window.Event('change'));
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py', 'D:/proj/src/b.py'], dirs: [] },
+}));
+ok(srcBox3.checked === true && aBox3.checked === true, 'race pre-step: folder checked with files');
+// 2) uncheck src — the collectFiles response is NOT delivered yet
+srcBox3.checked = false;
+srcBox3.dispatchEvent(new window.Event('change'));
+// 3) the race window: an interaction OUTSIDE the folder re-runs
+// updateDirStates while src's children are still checked (both a.py and b.py).
+// Without the bidirectional pending guard this re-derives src back to CHECKED
+// (the bug) — the late response would then re-add the whole subtree.
+pkgBox3.checked = true;
+pkgBox3.dispatchEvent(new window.Event('change'));
+ok(srcBox3.checked === false, 'folder stays unchecked while uncheck response pending');
+// 4) the uncheck response lands — applyDirSelection must read unchecked
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py', 'D:/proj/src/b.py'], dirs: [] },
+}));
+ok(aBox3.checked === false && srcBox3.checked === false, 'uncheck response clears the folder files');
+// 5) Preview must NOT contain the unselected folder's files
+window.document.getElementById('btn-preview').click();
+const racePreview = sent.filter((m) => m.type === 'preview').pop();
+ok(
+  !!racePreview && racePreview.selectedPaths.includes('D:/proj/package.json'),
+  'preview still fires for the remaining selection (package.json)',
+);
+ok(
+  !!racePreview &&
+    !racePreview.selectedPaths.includes('D:/proj/src/a.py') &&
+    !racePreview.selectedPaths.includes('D:/proj/src/b.py'),
+  'preview excludes the unselected folder files',
+);
+// restore: uncheck pkg so the fileProgress test below starts from empty selection
+pkgBox3.checked = false;
+pkgBox3.dispatchEvent(new window.Event('change'));
+
+// ---- Per-file transfer progress: fileProgress messages update the row's bar
+// and reveal the live speed; rows show nothing until the transfer starts.
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'queue', items: [{ relPath: 'big/model.bin', status: 'overwrite', size: 10 * 1024 * 1024, mtimeMs: 1 }], mode: 'result' },
+}));
+const fRow = window.document.querySelector('#queue-list .qitem');
+const fMeta = fRow.querySelector('.qmeta');
+ok(!!fRow.querySelector('.qbar') && !!fRow.querySelector('.qspeed'), 'queue row has per-file progress bar + speed slot');
+ok(fMeta.hidden === true, 'per-file progress hidden before transfer');
+// Mock the clock so the speed delta is deterministic (two dispatches in the
+// same millisecond would produce no measurable delta).
+const realNow = Date.now;
+let fakeNow = 1000000;
+Date.now = () => fakeNow;
+if (window.Date && window.Date !== Date) {
+  window.Date.now = () => fakeNow;
+}
+try {
+  window.dispatchEvent(new window.MessageEvent('message', {
+    data: { type: 'fileProgress', relPath: 'big/model.bin', bytesDone: 512 * 1024, bytesTotal: 10 * 1024 * 1024 },
+  }));
+  ok(fMeta.hidden === false, 'per-file progress revealed when transfer starts');
+  ok(fMeta.querySelector('.qbar-fill').style.width === '5%', 'bar width matches bytes done (5%)');
+  fakeNow += 200; // 200ms later
+  window.dispatchEvent(new window.MessageEvent('message', {
+    data: { type: 'fileProgress', relPath: 'big/model.bin', bytesDone: 1024 * 1024, bytesTotal: 10 * 1024 * 1024 },
+  }));
+  const speedText = fMeta.querySelector('.qspeed').textContent;
+  ok(/^\d+(\.\d+)? (B|KB|MB|GB)\/s$/.test(speedText), 'speed text shown and formatted (' + speedText + ')');
+  ok(speedText === '2.5 MB/s', 'speed computed from byte delta over time (' + speedText + ')');
+} finally {
+  Date.now = realNow;
+  if (window.Date && window.Date !== Date) {
+    window.Date.now = realNow;
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

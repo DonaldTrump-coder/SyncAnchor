@@ -150,6 +150,45 @@ ok(gi('build/x/y.js', false), 'slash dir pattern anchored to base');
   ok(fresh[0].status === 'new', 'ENOENT stat → new');
   const broken = await engine.diffRemote(sftpDead, [mkItem('b.txt')]);
   ok(broken[0].status === 'error' && !!broken[0].error, 'non-ENOENT stat failure → error');
+
+  // uploadFiles must pass the transfer pipeline (chunkSize × concurrency)
+  // through to fastPut and register the per-file progress step callback —
+  // the WAN speed fix is worthless if the settings get dropped.
+  const fastPutCalls = [];
+  const sftpUpload = {
+    stat: (p, cb) => cb(Object.assign(new Error('no such file'), { code: 'ENOENT' })),
+    mkdir: (p, cb) => cb(),
+    fastPut: (local, remote, opts, cb) => {
+      fastPutCalls.push({
+        local,
+        remote,
+        chunkSize: opts.chunkSize,
+        concurrency: opts.concurrency,
+        hasStep: typeof opts.step === 'function',
+      });
+      if (typeof opts.step === 'function') {
+        opts.step(1, 1, 1); // one progress tick
+      }
+      cb();
+    },
+  };
+  const upItems = [mkItem('big/model.bin')];
+  const fileProgress = [];
+  await engine.uploadFiles(sftpUpload, upItems, {
+    backup: false,
+    chunkSize: 131072,
+    concurrency: 256,
+    onProgress: () => {},
+    onFileProgress: (rel, done, total) => fileProgress.push([rel, done, total]),
+  });
+  ok(fastPutCalls.length === 1, 'uploadFiles calls fastPut once per file');
+  ok(
+    fastPutCalls[0].chunkSize === 131072 && fastPutCalls[0].concurrency === 256,
+    'pipeline settings passed through to fastPut',
+  );
+  ok(fastPutCalls[0].hasStep, 'step callback registered (per-file progress)');
+  ok(fileProgress.length === 1 && fileProgress[0][0] === 'big/model.bin', 'onFileProgress relayed');
+  ok(upItems[0].status === 'done', 'uploaded item marked done');
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();

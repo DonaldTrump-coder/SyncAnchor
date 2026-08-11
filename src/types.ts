@@ -102,6 +102,12 @@ export type E2WMessage =
     | { type: 'queueItem'; item: QueueItem; mode: 'preview' }
     | { type: 'uploadDone'; hasErrors: boolean }
     | { type: 'progress'; done: number; total: number; current: string }
+    | {
+          type: 'fileProgress';
+          relPath: string;
+          bytesDone: number;
+          bytesTotal: number;
+      }
     | { type: 'log'; line: string }
     | { type: 'status'; text: string; ok: boolean }
     | { type: 'error'; message: string };
