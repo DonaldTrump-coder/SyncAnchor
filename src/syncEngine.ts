@@ -7,6 +7,13 @@ import { SFTPWrapper } from 'ssh2';
 import { QueueItem, RemoteDirEntry } from './types';
 import { relativeToBase, joinRemote, matchesExclude } from './relative';
 
+/** Metadata round-trips are latency-bound; cap them without flooding SFTP. */
+const DIFF_CONCURRENCY = 16;
+/** Small files benefit from file-level parallelism more than deep chunk queues. */
+const SMALL_FILE_MAX_BYTES = 4 * 1024 * 1024;
+const SMALL_FILE_CONCURRENCY = 8;
+const SMALL_FILE_CHUNK_CONCURRENCY = 4;
+
 /**
  * Expand selected files/folders into a flat file list (file-granularity).
  * Folders are recursive; excluded patterns and symlinks are skipped.
@@ -107,7 +114,7 @@ export async function diffRemote(
     items: QueueItem[],
     onItem?: (item: QueueItem) => void,
 ): Promise<QueueItem[]> {
-    for (const it of items) {
+    await runBounded(items, DIFF_CONCURRENCY, async (it) => {
         try {
             const st = await stat(sftp, it.remotePath);
             const same = st.size === it.size && Math.abs(st.mtime * 1000 - it.mtimeMs) < 2000;
@@ -123,7 +130,7 @@ export async function diffRemote(
             }
         }
         onItem?.(it);
-    }
+    });
     return items;
 }
 
@@ -143,19 +150,17 @@ export async function uploadFiles(
     const { backup, onProgress, onFileProgress, chunkSize, concurrency } = opts;
     const backupRoot = backup ? await prepareBackupRoot(sftp) : undefined;
     let done = 0;
-    for (const it of items) {
-        if (it.status === 'skip') {
-            it.status = 'done';
-            done++;
-            onProgress(done, items.length, it.relPath);
-            continue;
-        }
+    const reportDone = (it: QueueItem) => {
+        done++;
+        onProgress(done, items.length, it.relPath);
+    };
+    const uploadOne = async (it: QueueItem, fileConcurrency: number) => {
         try {
             if (backupRoot && it.status === 'overwrite') {
                 await backupRemote(sftp, backupRoot, it.remotePath, it.relPath);
             }
             await ensureRemoteDir(sftp, dirname(it.remotePath));
-            await fastPut(sftp, it.localPath, it.remotePath, it.size, { chunkSize, concurrency }, (bytes) =>
+            await fastPut(sftp, it.localPath, it.remotePath, it.size, { chunkSize, concurrency: fileConcurrency }, (bytes) =>
                 onFileProgress?.(it.relPath, bytes, it.size),
             );
             it.status = 'done';
@@ -163,8 +168,45 @@ export async function uploadFiles(
             it.status = 'error';
             it.error = e instanceof Error ? e.message : String(e);
         }
-        done++;
-        onProgress(done, items.length, it.relPath);
+        reportDone(it);
+    };
+
+    for (let i = 0; i < items.length;) {
+        const it = items[i];
+        if (it.status === 'skip') {
+            it.status = 'done';
+            reportDone(it);
+            i++;
+            continue;
+        }
+
+        if (it.size > SMALL_FILE_MAX_BYTES) {
+            // A large file owns the session's deep SFTP pipeline. Waiting for
+            // earlier small files prevents aggregate in-flight requests from
+            // exceeding the server's channel/window limits.
+            await uploadOne(it, concurrency);
+            i++;
+            continue;
+        }
+
+        const smallBatch: QueueItem[] = [];
+        while (i < items.length) {
+            const candidate = items[i];
+            if (candidate.status === 'skip') {
+                candidate.status = 'done';
+                reportDone(candidate);
+                i++;
+                continue;
+            }
+            if (candidate.size > SMALL_FILE_MAX_BYTES) {
+                break; // a large file is the only exclusive scheduling barrier
+            }
+            smallBatch.push(candidate);
+            i++;
+        }
+        await runBounded(smallBatch, SMALL_FILE_CONCURRENCY, (small) =>
+            uploadOne(small, Math.min(concurrency, SMALL_FILE_CHUNK_CONCURRENCY)),
+        );
     }
 }
 
@@ -185,9 +227,29 @@ export async function ensureRemoteDir(sftp: SFTPWrapper, remoteDir: string): Pro
         try {
             await stat(sftp, cur);
         } catch {
-            await mkdir(sftp, cur);
+            try {
+                await mkdir(sftp, cur);
+            } catch (e) {
+                // Concurrent small-file uploads can discover the same missing
+                // parent at once. Another worker winning mkdir is harmless.
+                if (!(e as NodeJS.ErrnoException).code || (e as NodeJS.ErrnoException).code !== 'EEXIST') {
+                    throw e;
+                }
+            }
         }
     }
+}
+
+/** Run work with a fixed number of workers and preserve caller-owned items. */
+async function runBounded<T>(items: T[], limit: number, work: (item: T) => Promise<void>): Promise<void> {
+    let next = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (next < items.length) {
+            const item = items[next++];
+            await work(item);
+        }
+    });
+    await Promise.all(workers);
 }
 
 // ---- SFTP helpers (promisified) ----

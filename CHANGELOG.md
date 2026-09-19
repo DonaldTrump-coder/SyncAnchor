@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.7] - 2026-09-19
+
+### Changed
+
+- Speed up large source-tree previews with up to 16 concurrent, bounded SFTP `stat` requests instead of serial metadata checks.
+- Upload files up to 4 MiB with a bounded pool of up to 8 concurrent files, each using a shallow 4-request SFTP write pipeline.
+- Keep files larger than 4 MiB exclusive and preserve the configured high-depth SFTP pipeline for maximum large-file throughput.
+- Treat skipped files as non-blocking within small-file batches, so later uploads continue to use file-level concurrency when unchanged files appear in the queue.
+- Safely handle concurrent creation of the same remote parent directory during parallel small-file uploads.
+
 ## [0.0.6] - 2026-08-11
 
 ### Fixed

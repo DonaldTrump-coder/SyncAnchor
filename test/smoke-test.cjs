@@ -172,7 +172,7 @@ ok(gi('build/x/y.js', false), 'slash dir pattern anchored to base');
       cb();
     },
   };
-  const upItems = [mkItem('big/model.bin')];
+  const upItems = [{ ...mkItem('big/model.bin'), size: 5 * 1024 * 1024 }];
   const fileProgress = [];
   await engine.uploadFiles(sftpUpload, upItems, {
     backup: false,
@@ -189,6 +189,96 @@ ok(gi('build/x/y.js', false), 'slash dir pattern anchored to base');
   ok(fastPutCalls[0].hasStep, 'step callback registered (per-file progress)');
   ok(fileProgress.length === 1 && fileProgress[0][0] === 'big/model.bin', 'onFileProgress relayed');
   ok(upItems[0].status === 'done', 'uploaded item marked done');
+
+  // Preview metadata checks must be bounded-concurrent: serial stat calls make
+  // large source trees unusably slow on high-latency SSH links.
+  let activeStats = 0;
+  let maxActiveStats = 0;
+  const sftpConcurrentStats = {
+    stat: (p, cb) => {
+      activeStats++;
+      maxActiveStats = Math.max(maxActiveStats, activeStats);
+      setTimeout(() => {
+        activeStats--;
+        cb(Object.assign(new Error('no such file'), { code: 'ENOENT' }));
+      }, 5);
+    },
+  };
+  await engine.diffRemote(sftpConcurrentStats, Array.from({ length: 20 }, (_, i) => mkItem(`many/${i}.txt`)));
+  ok(maxActiveStats > 1 && maxActiveStats <= 16, 'diffRemote bounds concurrent stat requests at 16');
+
+  // Small files should share a bounded file-level pool, whereas a large file
+  // remains exclusive and retains the high-throughput user pipeline.
+  let activePuts = 0;
+  let maxActivePuts = 0;
+  const putEvents = [];
+  const smallPipelines = [];
+  const largePipelines = [];
+  const sftpMixedUpload = {
+    stat: (p, cb) => cb(Object.assign(new Error('no such file'), { code: 'ENOENT' })),
+    mkdir: (p, cb) => cb(),
+    fastPut: (local, remote, opts, cb) => {
+      activePuts++;
+      maxActivePuts = Math.max(maxActivePuts, activePuts);
+      const isLarge = remote.endsWith('large.bin');
+      (isLarge ? largePipelines : smallPipelines).push(opts.concurrency);
+      putEvents.push(`start:${path.basename(remote)}`);
+      setTimeout(() => {
+        activePuts--;
+        putEvents.push(`end:${path.basename(remote)}`);
+        cb();
+      }, 5);
+    },
+  };
+  const mixedItems = [
+    { ...mkItem('small-a.txt'), size: 1024 },
+    { ...mkItem('small-b.txt'), size: 1024 },
+    { ...mkItem('large.bin'), size: 5 * 1024 * 1024 },
+    { ...mkItem('small-c.txt'), size: 1024 },
+  ];
+  await engine.uploadFiles(sftpMixedUpload, mixedItems, {
+    backup: false,
+    chunkSize: 131072,
+    concurrency: 128,
+    onProgress: () => {},
+  });
+  ok(maxActivePuts > 1 && maxActivePuts <= 8, 'small files upload with bounded file-level concurrency');
+  ok(smallPipelines.every((n) => n === 4), 'small files use a shallow SFTP chunk pipeline');
+  ok(largePipelines.length === 1 && largePipelines[0] === 128, 'large file keeps the configured high-depth pipeline');
+  ok(
+    putEvents.indexOf('start:large.bin') > putEvents.indexOf('end:small-a.txt') &&
+      putEvents.indexOf('start:large.bin') > putEvents.indexOf('end:small-b.txt'),
+    'large file waits for preceding small-file batch and remains exclusive',
+  );
+
+  // Skipped files must never split a small-file batch. Each Upload invocation
+  // must consistently use the same scheduler, not fall back to serial work.
+  let activeAcrossSkip = 0;
+  let maxAcrossSkip = 0;
+  const sftpAcrossSkip = {
+    stat: (p, cb) => cb(Object.assign(new Error('no such file'), { code: 'ENOENT' })),
+    mkdir: (p, cb) => cb(),
+    fastPut: (local, remote, opts, cb) => {
+      activeAcrossSkip++;
+      maxAcrossSkip = Math.max(maxAcrossSkip, activeAcrossSkip);
+      setTimeout(() => {
+        activeAcrossSkip--;
+        cb();
+      }, 5);
+    },
+  };
+  const itemsAcrossSkip = [
+    { ...mkItem('first.txt'), size: 1024 },
+    { ...mkItem('already-there.txt'), size: 1024, status: 'skip' },
+    { ...mkItem('second.txt'), size: 1024 },
+  ];
+  await engine.uploadFiles(sftpAcrossSkip, itemsAcrossSkip, {
+    backup: false,
+    chunkSize: 131072,
+    concurrency: 128,
+    onProgress: () => {},
+  });
+  ok(maxAcrossSkip === 2, 'skipped files do not break small-file concurrency in later uploads');
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();
