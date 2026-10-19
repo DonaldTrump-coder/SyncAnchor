@@ -128,7 +128,7 @@ body {
 
 .grid {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1.2fr 0.9fr;
+  grid-template-columns: minmax(160px, 1.2fr) 7px minmax(160px, 1fr) 7px minmax(160px, 1.2fr) 7px minmax(140px, 0.9fr);
   grid-template-rows: 100%; /* single row filling the grid — columns scroll internally */
   flex: 1;
   min-height: 0;
@@ -143,8 +143,26 @@ body {
   border-right: 1px solid var(--vscode-panel-border);
 }
 
-.col:last-child {
-  border-right: none;
+.col-resizer {
+  position: relative;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.col-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  background: var(--vscode-panel-border);
+}
+
+.col-resizer:hover::after,
+.col-resizer:focus-visible::after,
+.col-resizer.dragging::after {
+  inset: 0 2px;
+  background: var(--vscode-focusBorder);
 }
 
 .col h3 {
@@ -426,6 +444,14 @@ body {
 .qpath {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.queue-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 8px;
+  border-top: 1px solid var(--vscode-panel-border);
+  flex: none;
 }
 
 /* per-file progress row (bar + speed), hidden until the transfer starts */

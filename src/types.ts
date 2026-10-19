@@ -78,8 +78,9 @@ export type W2EMessage =
     | { type: 'preview'; selectedPaths: string[] }
     | { type: 'cancelPreview' }
     | { type: 'upload' }
+    | { type: 'retryFailed' }
     | { type: 'readRemoteDir'; dirPath: string }
-    | { type: 'collectFiles'; dirPath: string };
+    | { type: 'collectFiles'; dirPath: string; requestId: number };
 
 /** Message protocol: extension -> webview. */
 export type E2WMessage =
@@ -97,9 +98,10 @@ export type E2WMessage =
     | { type: 'dir'; dirPath: string; entries: DirEntry[] }
     | { type: 'remoteDir'; dirPath: string; entries: RemoteDirEntry[] }
     | { type: 'homeDir'; path: string }
-    | { type: 'filesCollected'; dirPath: string; files: string[]; dirs: string[] }
+    | { type: 'filesCollected'; dirPath: string; files: string[]; dirs: string[]; requestId: number }
     | { type: 'queue'; items: QueueItem[]; mode: 'preview' | 'result' }
     | { type: 'queueItem'; item: QueueItem; mode: 'preview' }
+    | { type: 'uploadStarted' }
     | { type: 'uploadDone'; hasErrors: boolean }
     | { type: 'progress'; done: number; total: number; current: string }
     | {

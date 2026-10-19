@@ -39,14 +39,20 @@
       <h3>Local <span class="hint">check files to select</span></h3>
       <div class="tree" id="local-tree"><div class="placeholder">Pick a local base folder to browse.</div></div>
     </section>
+    <div class="col-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Local and Remote panels" tabindex="0"></div>
     <section class="col">
       <h3>Remote <span class="hint">reference</span></h3>
       <div class="tree" id="remote-tree"><div class="placeholder">Connect to browse the remote filesystem.</div></div>
     </section>
+    <div class="col-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Remote and Queue panels" tabindex="0"></div>
     <section class="col">
       <h3>Queue <span class="hint" id="queue-count"></span></h3>
       <div class="tree" id="queue-list"><div class="placeholder">Select files, then press Preview.</div></div>
+      <div class="queue-actions">
+        <button id="btn-retry-failed" class="btn" disabled>Retry failed files</button>
+      </div>
     </section>
+    <div class="col-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Queue and Log panels" tabindex="0"></div>
     <section class="col">
       <h3 class="log-head">Log <button id="btn-log-clear" class="btn small" title="Clear log">Clear</button></h3>
       <div class="log" id="log"></div>

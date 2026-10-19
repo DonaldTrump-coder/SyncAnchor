@@ -164,6 +164,7 @@ export async function uploadFiles(
                 onFileProgress?.(it.relPath, bytes, it.size),
             );
             it.status = 'done';
+            delete it.error;
         } catch (e) {
             it.status = 'error';
             it.error = e instanceof Error ? e.message : String(e);

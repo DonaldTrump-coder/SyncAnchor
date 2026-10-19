@@ -172,7 +172,7 @@ ok(gi('build/x/y.js', false), 'slash dir pattern anchored to base');
       cb();
     },
   };
-  const upItems = [{ ...mkItem('big/model.bin'), size: 5 * 1024 * 1024 }];
+  const upItems = [{ ...mkItem('big/model.bin'), size: 5 * 1024 * 1024, status: 'error', error: 'temporary failure' }];
   const fileProgress = [];
   await engine.uploadFiles(sftpUpload, upItems, {
     backup: false,
@@ -189,6 +189,7 @@ ok(gi('build/x/y.js', false), 'slash dir pattern anchored to base');
   ok(fastPutCalls[0].hasStep, 'step callback registered (per-file progress)');
   ok(fileProgress.length === 1 && fileProgress[0][0] === 'big/model.bin', 'onFileProgress relayed');
   ok(upItems[0].status === 'done', 'uploaded item marked done');
+  ok(!upItems[0].error, 'successful retry clears previous error');
 
   // Preview metadata checks must be bounded-concurrent: serial stat calls make
   // large source trees unusably slow on high-latency SSH links.

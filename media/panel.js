@@ -26,8 +26,13 @@
     backup: false,
     excludes: [],
     selected: new Set(), // absolute local paths
+    selectionEpoch: 0,
+    nextCollectRequestId: 1,
+    pendingCollects: new Map(), // requestId -> { dirPath, epoch }
     queue: [],
     previewing: true, // streaming preview rows are accepted while true
+    transferActive: false,
+    uploadCompleted: false,
   };
 
   const localChildren = new Map(); // dirPath -> children container element
@@ -45,6 +50,7 @@
   const chkBackup = $('chk-backup');
   const btnPreview = $('btn-preview');
   const btnUpload = $('btn-upload');
+  const btnRetryFailed = $('btn-retry-failed');
   const btnRefresh = $('btn-refresh');
   const localTree = $('local-tree');
   const remoteTree = $('remote-tree');
@@ -62,6 +68,107 @@
   const pickerPathEl = $('picker-path');
   const pickerOk = $('picker-ok');
   const btnRemotePicker = $('btn-remote-picker');
+  const grid = document.querySelector('.grid');
+  const resizers = [...document.querySelectorAll('.col-resizer')];
+
+  const defaultColumnWeights = [1.2, 1, 1.2, 0.9];
+  const savedColumnWidths = vscode.getState?.()?.columnWidths;
+  let columnWidths = Array.isArray(savedColumnWidths) && savedColumnWidths.length === 4
+    ? savedColumnWidths.map((width) => Number(width))
+    : defaultColumnWeights;
+  if (columnWidths.some((width) => !Number.isFinite(width) || width <= 0)) {
+    columnWidths = defaultColumnWeights;
+  }
+  const minColumnWidths = [160, 160, 160, 140];
+  let activeResize = null;
+
+  function availableGridWidth() {
+    return Math.max(1, (grid.clientWidth || 1000) - resizers.length * 7);
+  }
+
+  function getPixelWidths() {
+    const available = availableGridWidth();
+    const minTotal = minColumnWidths.reduce((sum, width) => sum + width, 0);
+    const effectiveMins = available >= minTotal
+      ? minColumnWidths
+      : minColumnWidths.map((width) => width * available / minTotal);
+    const free = Math.max(0, available - effectiveMins.reduce((sum, width) => sum + width, 0));
+    const weightTotal = columnWidths.reduce((sum, weight) => sum + weight, 0);
+    return columnWidths.map((weight, index) => effectiveMins[index] + free * weight / weightTotal);
+  }
+
+  function applyColumnWidths(widths = getPixelWidths()) {
+    const tracks = widths.flatMap((width, index) =>
+      index < resizers.length ? [`${width}px`, '7px'] : [`${width}px`],
+    );
+    grid.style.gridTemplateColumns = tracks.join(' ');
+  }
+
+  function persistPixelWidths(widths) {
+    const available = availableGridWidth();
+    const minTotal = minColumnWidths.reduce((sum, width) => sum + width, 0);
+    const effectiveMins = available >= minTotal
+      ? minColumnWidths
+      : minColumnWidths.map((width) => width * available / minTotal);
+    columnWidths = widths.map((width, index) => Math.max(0.01, width - effectiveMins[index]));
+    vscode.setState?.({ ...(vscode.getState?.() || {}), columnWidths });
+  }
+
+  function resizeAdjacent(index, delta, startWidths = getPixelWidths()) {
+    const widths = startWidths.slice();
+    const minLeft = minColumnWidths[index];
+    const minRight = minColumnWidths[index + 1];
+    const left = startWidths[index];
+    const right = startWidths[index + 1];
+    const change = Math.max(minLeft - left, Math.min(right - minRight, delta));
+    widths[index] = left + change;
+    widths[index + 1] = right - change;
+    persistPixelWidths(widths);
+    applyColumnWidths(widths);
+  }
+
+  function finishResize() {
+    if (!activeResize) return;
+    activeResize.resizer.classList.remove('dragging');
+    activeResize = null;
+  }
+
+  document.addEventListener('pointermove', (event) => {
+    if (!activeResize || event.pointerId !== activeResize.pointerId) return;
+    resizeAdjacent(activeResize.index, event.clientX - activeResize.startX, activeResize.startWidths);
+    event.preventDefault();
+  });
+  document.addEventListener('pointerup', (event) => {
+    if (activeResize && event.pointerId === activeResize.pointerId) finishResize();
+  });
+  document.addEventListener('pointercancel', finishResize);
+
+  resizers.forEach((resizer, index) => {
+    resizer.addEventListener('pointerdown', (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      activeResize = {
+        index,
+        resizer,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startWidths: getPixelWidths(),
+      };
+      resizer.classList.add('dragging');
+      try {
+        resizer.setPointerCapture?.(event.pointerId);
+      } catch (_) {
+        // Document-level pointer listeners still track the drag.
+      }
+      event.preventDefault();
+    });
+    resizer.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      resizeAdjacent(index, event.key === 'ArrowRight' ? 16 : -16);
+      event.preventDefault();
+    });
+  });
+  window.addEventListener('resize', () => applyColumnWidths());
+  applyColumnWidths();
 
   // ---------- messaging ----------
 
@@ -90,7 +197,7 @@
         }
         break;
       case 'filesCollected':
-        applyDirSelection(m.dirPath, m.files, m.dirs);
+        applyDirSelection(m);
         break;
       case 'queue':
         renderQueue(m.items, m.mode);
@@ -107,12 +214,20 @@
         }
         break;
       case 'uploadDone':
+        state.transferActive = false;
+        state.uploadCompleted = true;
+        updateButtons();
         if (!m.hasErrors) {
           clearSelection();
           appendLog('✓ Upload finished — selection cleared');
         } else {
           appendLog('⚠ Some files failed — selection kept for retry');
         }
+        break;
+      case 'uploadStarted':
+        state.transferActive = true;
+        state.uploadCompleted = false;
+        updateButtons();
         break;
       case 'progress':
         renderProgress(m);
@@ -351,7 +466,10 @@
         // applyDirSelection would then re-add the whole subtree — "unchecking
         // a folder doesn't drop its files from the upload".
         div.dataset.pending = '1';
-        post({ type: 'collectFiles', dirPath: entry.path });
+        const requestId = state.nextCollectRequestId++;
+        state.pendingCollects.set(requestId, { dirPath: entry.path, epoch: state.selectionEpoch });
+        updateButtons();
+        post({ type: 'collectFiles', dirPath: entry.path, requestId });
       });
     } else {
       chk.addEventListener('change', () => {
@@ -373,6 +491,11 @@
 
   /** Uncheck every node and drop the selection (after upload/refresh). */
   function clearSelection() {
+    state.selectionEpoch++;
+    state.pendingCollects.clear();
+    for (const node of localTree.querySelectorAll('.node.dir[data-pending="1"]')) {
+      node.dataset.pending = '';
+    }
     state.selected.clear();
     for (const chk of localTree.querySelectorAll('input.chk:checked')) {
       chk.checked = false;
@@ -408,7 +531,22 @@
    * subfolder boxes). Reads the folder's CURRENT checkbox state, so concurrent
    * collectFiles responses cannot race each other.
    */
-  function applyDirSelection(dirPath, files, dirs) {
+  function applyDirSelection(message) {
+    const { dirPath, files, dirs, requestId } = message;
+    const request = state.pendingCollects.get(requestId);
+    if (!request || request.dirPath !== dirPath) {
+      return;
+    }
+    state.pendingCollects.delete(requestId);
+    if (request.epoch !== state.selectionEpoch) {
+      const node = findNodeEl(dirPath);
+      if (node && ![...state.pendingCollects.values()].some((p) => p.dirPath === dirPath)) {
+        node.dataset.pending = '';
+      }
+      updateDirStates();
+      updateButtons();
+      return;
+    }
     const selfBox = findBox(dirPath);
     const checked = selfBox ? selfBox.checked : true;
     for (const f of files) {
@@ -441,7 +579,7 @@
     }
     // The collectFiles round-trip is done — release the tri-state guard.
     const node = findNodeEl(dirPath);
-    if (node) {
+    if (node && ![...state.pendingCollects.values()].some((p) => p.dirPath === dirPath)) {
       node.dataset.pending = '';
     }
     updateDirStates();
@@ -705,6 +843,9 @@
 
   function renderQueue(items, mode) {
     state.queue = items;
+    if (mode === 'preview') {
+      state.uploadCompleted = false;
+    }
     fileEls.clear(); // rows are rebuilt — drop stale per-file progress state
     queueList.innerHTML = '';
     queueCount.textContent = queueCountText(items, mode);
@@ -782,8 +923,13 @@
 
   function updateButtons() {
     btnConnect.disabled = !connSelect.value;
-    btnPreview.disabled = !state.connected || state.selected.size === 0;
+    btnPreview.disabled = !state.connected || state.selected.size === 0 || state.pendingCollects.size > 0;
     btnUpload.disabled = !state.connected || state.queue.length === 0;
+    btnRetryFailed.disabled =
+      !state.connected ||
+      state.transferActive ||
+      !state.uploadCompleted ||
+      !state.queue.some((item) => item.status === 'error');
   }
 
   // ---------- events ----------
@@ -844,6 +990,10 @@
   });
 
   btnPreview.addEventListener('click', () => {
+    if (state.pendingCollects.size > 0) {
+      appendLog('⚠ Folder selection is still being updated');
+      return;
+    }
     if (!state.selected.size) {
       appendLog('⚠ Nothing selected — check files in the local tree');
       return;
@@ -860,11 +1010,19 @@
     post({ type: 'upload' });
   });
 
+  btnRetryFailed.addEventListener('click', () => {
+    if (btnRetryFailed.disabled) return;
+    state.transferActive = true;
+    updateButtons();
+    post({ type: 'retryFailed' });
+  });
+
   btnRefresh.addEventListener('click', () => {
     // Clear the finished transfer queue and the stale selection on refresh so
     // a fresh Preview starts clean (no leftover checked files). Also cancel any
     // in-flight streaming preview: its rows must not reappear after the clear.
     state.previewing = false;
+    state.uploadCompleted = false;
     post({ type: 'cancelPreview' });
     state.queue = [];
     renderQueue([], 'result');

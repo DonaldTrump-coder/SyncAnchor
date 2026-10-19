@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.8] - 2026-10-19
+
+### Added
+
+- Resize the Local, Remote, Queue, and Log panels by dragging their dividers; panel widths are saved across sessions.
+- Retry failed files after a transfer completes. Successful retries clear their previous error state.
+
+### Fixed
+
+- Prevent stale asynchronous folder scans from re-adding files after their selection has been cleared or changed.
+- Disable Preview while folder selection scans are still pending.
+
 ## [0.0.7] - 2026-09-19
 
 ### Changed

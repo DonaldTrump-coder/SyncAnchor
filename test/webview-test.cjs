@@ -37,7 +37,24 @@ for (const cls of ['grid', 'col', 'tree', 'log']) {
 const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://webview/' });
 const { window } = dom;
 const sent = [];
-window.acquireVsCodeApi = () => ({ postMessage: (m) => sent.push(m) });
+let webviewState = {};
+const deliveredCollects = new Set();
+function deliverCollected(dirPath, files, dirs) {
+  const requests = sent.filter(
+    (m) => m.type === 'collectFiles' && m.dirPath === dirPath && !deliveredCollects.has(m.requestId),
+  );
+  for (const request of requests) {
+    deliveredCollects.add(request.requestId);
+    window.dispatchEvent(new window.MessageEvent('message', {
+      data: { type: 'filesCollected', dirPath, files, dirs, requestId: request.requestId },
+    }));
+  }
+}
+window.acquireVsCodeApi = () => ({
+  postMessage: (m) => sent.push(m),
+  getState: () => webviewState,
+  setState: (state) => { webviewState = state; },
+});
 const errors = [];
 window.addEventListener('error', (e) => errors.push(String(e.message)));
 // jsdom lacks the pointer-capture API. The webview's drag-box captures the
@@ -52,6 +69,20 @@ window.eval(script);
 
 ok(sent.some((m) => m.type === 'ready'), 'panel posts ready on init');
 ok(sent.some((m) => m.type === 'getConnections'), 'panel requests connections on init');
+const panelResizers = [...window.document.querySelectorAll('.col-resizer')];
+ok(panelResizers.length === 3, 'four panels have three resize handles');
+ok(panelResizers.every((el) => el.getAttribute('role') === 'separator' && el.tabIndex === 0), 'resize handles are keyboard accessible');
+const initialTracks = window.document.querySelector('.grid').style.gridTemplateColumns;
+const initialLocalWidth = parseFloat(initialTracks);
+panelResizers[0].dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, clientX: 100 }));
+panelResizers[0].dispatchEvent(new window.MouseEvent('pointermove', { bubbles: true, clientX: 125 }));
+const intermediateLocalWidth = parseFloat(window.document.querySelector('.grid').style.gridTemplateColumns);
+panelResizers[0].dispatchEvent(new window.MouseEvent('pointermove', { bubbles: true, clientX: 150 }));
+const finalLocalWidth = parseFloat(window.document.querySelector('.grid').style.gridTemplateColumns);
+panelResizers[0].dispatchEvent(new window.MouseEvent('pointerup', { bubbles: true, clientX: 150 }));
+ok(window.document.querySelector('.grid').style.gridTemplateColumns !== initialTracks, 'dragging a handle adjusts panel widths');
+ok(intermediateLocalWidth > initialLocalWidth && finalLocalWidth > intermediateLocalWidth, 'panel width follows each pointer move continuously');
+ok(Array.isArray(webviewState.columnWidths), 'panel widths are persisted in webview state');
 
 // Simulate a connections response: live + config + recent candidates.
 const list = [
@@ -193,6 +224,31 @@ window.dispatchEvent(new window.MessageEvent('message', { data: { type: 'uploadD
 ok(window.document.querySelectorAll('#local-tree input.chk:checked').length === 1, 'uploadDone (with errors) keeps selection');
 preChk.checked = false;
 preChk.dispatchEvent(new window.Event('change'));
+
+// Failed uploads can only be retried after the transfer is complete. A
+// successful retry changes the failed row to done, removing retry eligibility.
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'state', localBase: 'D:/proj', remoteBase: '/root/data', connId: 'x', connLabel: 'x', connected: true, backup: false, excludes: [] },
+}));
+const retryButton = window.document.getElementById('btn-retry-failed');
+const failedQueueItem = { relPath: 'retry-me.bin', status: 'error', size: 12, mtimeMs: 1, localPath: 'x', remotePath: 'y', error: 'temporary failure' };
+window.dispatchEvent(new window.MessageEvent('message', { data: { type: 'uploadStarted' } }));
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'queue', items: [failedQueueItem], mode: 'result' },
+}));
+ok(retryButton.disabled, 'retry disabled until upload completion is reported');
+window.dispatchEvent(new window.MessageEvent('message', { data: { type: 'uploadDone', hasErrors: true } }));
+ok(!retryButton.disabled, 'retry enabled after completed upload with failed item');
+retryButton.click();
+ok(sent.some((m) => m.type === 'retryFailed'), 'retry button requests failed-only transfer');
+ok(retryButton.disabled, 'retry disabled while retry transfer is active');
+const { error: _oldRetryError, ...successfulRetryItem } = failedQueueItem;
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'queue', items: [{ ...successfulRetryItem, status: 'done' }], mode: 'result' },
+}));
+window.dispatchEvent(new window.MessageEvent('message', { data: { type: 'uploadDone', hasErrors: false } }));
+ok(retryButton.disabled, 'successful retry removes item from failed set');
+ok(!window.document.querySelector('#queue-list .qitem').textContent.includes('temporary failure'), 'successful retry clears the old failure reason');
 
 // Tree expand/collapse: clicking the twisty toggles exactly once (guarding the
 // double-toggle bug), and clicking the row label blank area also expands.
@@ -343,17 +399,13 @@ const srcChkBox = srcNode2.querySelector(':scope > .row input.chk');
 srcChkBox.checked = true;
 srcChkBox.dispatchEvent(new window.Event('change'));
 ok(sent.some((m) => m.type === 'collectFiles' && m.dirPath === 'D:/proj/src'), 'folder check requests collectFiles');
-window.dispatchEvent(new window.MessageEvent('message', {
-  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py', 'D:/proj/src/b.py'], dirs: [] },
-}));
+deliverCollected('D:/proj/src', ['D:/proj/src/a.py', 'D:/proj/src/b.py'], []);
 window.document.getElementById('btn-preview').click();
 let previewMsg = sent.filter((m) => m.type === 'preview').pop();
 ok(!!previewMsg && previewMsg.selectedPaths.includes('D:/proj/src/a.py'), 'folder check selects its files');
 srcChkBox.checked = false;
 srcChkBox.dispatchEvent(new window.Event('change')); // uncheck
-window.dispatchEvent(new window.MessageEvent('message', {
-  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py', 'D:/proj/src/b.py'], dirs: [] },
-}));
+deliverCollected('D:/proj/src', ['D:/proj/src/a.py', 'D:/proj/src/b.py'], []);
 const previewCountBefore = sent.filter((m) => m.type === 'preview').length;
 window.document.getElementById('btn-preview').click();
 ok(
@@ -368,9 +420,7 @@ ok(
 //    would come back UNCHECKED while their files show checked.
 srcChkBox.checked = true;
 srcChkBox.dispatchEvent(new window.Event('change'));
-window.dispatchEvent(new window.MessageEvent('message', {
-  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py', 'D:/proj/src/sub/b.py'], dirs: ['D:/proj/src/sub'] },
-}));
+deliverCollected('D:/proj/src', ['D:/proj/src/a.py', 'D:/proj/src/sub/b.py'], ['D:/proj/src/sub']);
 const srcTwisty2 = srcNode2.querySelector(':scope > .row .twisty');
 srcTwisty2.click(); // expand (posts readDir)
 window.dispatchEvent(new window.MessageEvent('message', {
@@ -387,9 +437,7 @@ ok(srcChkBox.checked === true && srcChkBox.indeterminate === false, 'parent stay
 // restore: uncheck src so the tri-state tests below start clean.
 srcChkBox.checked = false;
 srcChkBox.dispatchEvent(new window.Event('change'));
-window.dispatchEvent(new window.MessageEvent('message', {
-  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py', 'D:/proj/src/sub/b.py'], dirs: ['D:/proj/src/sub'] },
-}));
+deliverCollected('D:/proj/src', ['D:/proj/src/a.py', 'D:/proj/src/sub/b.py'], ['D:/proj/src/sub']);
 ok(subChk.checked === false && aChkAfter.checked === false, 'unchecking folder clears subfolders too');
 
 // 2) tri-state: partial → indeterminate, all → checked, none → unchecked.
@@ -430,9 +478,7 @@ ok(srcChkBox.checked === true && srcChkBox.indeterminate === false, 'box-select 
 // Reset first: collapse src, uncheck everything.
 srcChkBox.checked = false;
 srcChkBox.dispatchEvent(new window.Event('change'));
-window.dispatchEvent(new window.MessageEvent('message', {
-  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py', 'D:/proj/src/b.py'], dirs: [] },
-}));
+deliverCollected('D:/proj/src', ['D:/proj/src/a.py', 'D:/proj/src/b.py'], []);
 aBox.checked = false;
 aBox.dispatchEvent(new window.Event('change'));
 bBox.checked = false;
@@ -491,6 +537,7 @@ ok(window.document.querySelectorAll('#queue-list .qitem').length === 2, 'final q
 
 // Preview click clears the queue IMMEDIATELY, superseding any stale streaming
 // rows that are still arriving from a previous run.
+window.document.getElementById('btn-refresh').click();
 window.dispatchEvent(new window.MessageEvent('message', {
   data: { type: 'state', localBase: 'D:/proj', remoteBase: '/root/data', connId: 'x', connLabel: 'x', connected: true, backup: false, excludes: [] },
 }));
@@ -547,9 +594,7 @@ const aBox3 = localTreeEl.querySelector('.node[data-path="D:/proj/src/a.py"] inp
 // 1) ensure src is fully checked with its files selected
 srcBox3.checked = true;
 srcBox3.dispatchEvent(new window.Event('change'));
-window.dispatchEvent(new window.MessageEvent('message', {
-  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py', 'D:/proj/src/b.py'], dirs: [] },
-}));
+deliverCollected('D:/proj/src', ['D:/proj/src/a.py', 'D:/proj/src/b.py'], []);
 ok(srcBox3.checked === true && aBox3.checked === true, 'race pre-step: folder checked with files');
 // 2) uncheck src — the collectFiles response is NOT delivered yet
 srcBox3.checked = false;
@@ -562,9 +607,7 @@ pkgBox3.checked = true;
 pkgBox3.dispatchEvent(new window.Event('change'));
 ok(srcBox3.checked === false, 'folder stays unchecked while uncheck response pending');
 // 4) the uncheck response lands — applyDirSelection must read unchecked
-window.dispatchEvent(new window.MessageEvent('message', {
-  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py', 'D:/proj/src/b.py'], dirs: [] },
-}));
+deliverCollected('D:/proj/src', ['D:/proj/src/a.py', 'D:/proj/src/b.py'], []);
 ok(aBox3.checked === false && srcBox3.checked === false, 'uncheck response clears the folder files');
 // 5) Preview must NOT contain the unselected folder's files
 window.document.getElementById('btn-preview').click();
@@ -582,6 +625,50 @@ ok(
 // restore: uncheck pkg so the fileProgress test below starts from empty selection
 pkgBox3.checked = false;
 pkgBox3.dispatchEvent(new window.Event('change'));
+window.document.getElementById('btn-refresh').click();
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'state', localBase: 'D:/proj', remoteBase: '/root/data', connId: 'x', connLabel: 'x', connected: true, backup: false, excludes: [] },
+}));
+
+// Preview must wait for the folder's authoritative recursive selection update.
+srcBox3.checked = true;
+srcBox3.dispatchEvent(new window.Event('change'));
+const pendingCheck = sent.filter((m) => m.type === 'collectFiles' && m.dirPath === 'D:/proj/src').pop();
+srcBox3.checked = false;
+srcBox3.dispatchEvent(new window.Event('change'));
+const pendingUncheck = sent.filter((m) => m.type === 'collectFiles' && m.dirPath === 'D:/proj/src').pop();
+const previewsBeforePendingClick = sent.filter((m) => m.type === 'preview').length;
+ok(window.document.getElementById('btn-preview').disabled, 'preview disabled while folder selection is pending');
+window.document.getElementById('btn-preview').click();
+ok(
+  sent.filter((m) => m.type === 'preview').length === previewsBeforePendingClick,
+  'direct preview click is ignored while folder selection is pending',
+);
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py'], dirs: [], requestId: pendingUncheck.requestId },
+}));
+deliveredCollects.add(pendingUncheck.requestId);
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py'], dirs: [], requestId: pendingCheck.requestId },
+}));
+deliveredCollects.add(pendingCheck.requestId);
+pkgBox3.checked = true;
+pkgBox3.dispatchEvent(new window.Event('change'));
+ok(!window.document.getElementById('btn-preview').disabled, 'preview re-enabled after all folder responses arrive');
+ok(!window.document.querySelector('#local-tree .node[data-path="D:/proj/src/a.py"] input.chk').checked,
+  'rapid check then uncheck resolves to unchecked');
+
+// A response from before Refresh must not repopulate the cleared selection.
+srcBox3.checked = true;
+srcBox3.dispatchEvent(new window.Event('change'));
+const staleCollect = sent.filter((m) => m.type === 'collectFiles' && m.dirPath === 'D:/proj/src').pop();
+window.document.getElementById('btn-refresh').click();
+window.dispatchEvent(new window.MessageEvent('message', {
+  data: { type: 'filesCollected', dirPath: 'D:/proj/src', files: ['D:/proj/src/a.py'], dirs: [], requestId: staleCollect.requestId },
+}));
+deliveredCollects.add(staleCollect.requestId);
+ok(window.document.querySelectorAll('#local-tree input.chk:checked').length === 0,
+  'late collect response after refresh cannot restore selection');
 
 // ---- Per-file transfer progress: fileProgress messages update the row's bar
 // and reveal the live speed; rows show nothing until the transfer starts.

@@ -181,11 +181,19 @@ export class SyncAnchorPanel {
             case 'upload':
                 await this.upload();
                 break;
+            case 'retryFailed':
+                if (!this.uploading) {
+                    const failed = this.queue.filter((item) => item.status === 'error');
+                    if (failed.length) {
+                        await this.upload(failed);
+                    }
+                }
+                break;
             case 'readRemoteDir':
                 await this.readRemote(m.dirPath);
                 break;
             case 'collectFiles':
-                this.collectLocalFiles(m.dirPath);
+                this.collectLocalFiles(m.dirPath, m.requestId);
                 break;
         }
     }
@@ -324,7 +332,7 @@ export class SyncAnchorPanel {
      * Recursively list every file (and subdirectory) under dirPath, honouring
      * exclude patterns and .gitignore. Used to auto-check a folder's subtree.
      */
-    private collectLocalFiles(dirPath: string): void {
+    private collectLocalFiles(dirPath: string, requestId: number): void {
         const excludes = this.excludes();
         const base = this.ctx.globalState.get<string>('syncAnchor.localBase') ?? '';
         const files: string[] = [];
@@ -357,7 +365,7 @@ export class SyncAnchorPanel {
             }
         };
         walk(dirPath);
-        this.post({ type: 'filesCollected', dirPath, files, dirs });
+        this.post({ type: 'filesCollected', dirPath, files, dirs, requestId });
     }
 
     private async readRemote(dirPath: string): Promise<void> {
@@ -423,7 +431,7 @@ export class SyncAnchorPanel {
         this.post({ type: 'queue', items: this.queue, mode: 'preview' });
     }
 
-    private async upload(): Promise<void> {
+    private async upload(retryItems?: QueueItem[]): Promise<void> {
         if (this.uploading) {
             return;
         }
@@ -432,11 +440,13 @@ export class SyncAnchorPanel {
             this.post({ type: 'error', message: 'Connect to a server first.' });
             return;
         }
-        if (this.queue.length === 0) {
+        const source = retryItems ?? this.queue;
+        if (source.length === 0) {
             this.post({ type: 'error', message: 'Nothing to upload — check files and run Preview first.' });
             return;
         }
         this.uploading = true;
+        this.post({ type: 'uploadStarted' });
         const cfg = vscode.workspace.getConfiguration('syncAnchor');
         const backup = cfg.get<boolean>('backupBeforeOverwrite', false);
         // Transfer pipeline: 128KB × 128 = 16MB in flight (vs ssh2's 2MB
@@ -445,7 +455,7 @@ export class SyncAnchorPanel {
         const concurrency = cfg.get<number>('transferConcurrency', 128);
         // Snapshot the queue so an in-flight preview or refresh can never
         // mutate the array this upload is iterating.
-        const items = this.queue.slice();
+        const items = source.slice();
         const total = items.filter((i) => i.status !== 'skip').length;
         this.log(`Upload: ${total} file(s) to transfer (backup=${backup}, pipeline ${chunkSize / 1024}KB × ${concurrency})`);
         try {
@@ -464,7 +474,7 @@ export class SyncAnchorPanel {
         const ok = items.filter((i) => i.status === 'done').length;
         const err = items.filter((i) => i.status === 'error').length;
         this.log(`Upload finished: ${ok} ok, ${err} error(s)`);
-        this.post({ type: 'queue', items, mode: 'result' });
+        this.post({ type: 'queue', items: this.queue, mode: 'result' });
         this.post({
             type: 'status',
             text: err ? `Upload finished: ${ok} ok, ${err} error(s)` : `Upload finished: ${ok} ok`,
